@@ -39,11 +39,17 @@ class Fft():
             'frequencies' : None,
             'freq_bins' : [63, 160, 400, 1000, 2500, 6250, 16000],
             'freq_bins_max' : [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'freq_bin_indexes' : [[0,0], [0,0], [0,0], [0,0], [0,0], [0,0], [0,0]],
+            'freq_bin_range' : [0, 0, 0, 0, 0, 0, 0],
             'bandwidth_factor' : 2.5,
             'bin_values' : [0, 0, 0, 0, 0, 0, 0],
             'bin_values_normalized' : [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            'dominant_freq' : 0.0
+            'dominant_freq' : 0.0,
+            'gain_factor' : 10e-7
     }
+
+    configured = False
+
 
     def __init__(self, datasize=2048, frate=44100.0):
 
@@ -55,7 +61,10 @@ class Fft():
         cellFRange = self.frate / self.datasize
 
 
-
+    def configure_fft(self, data):
+        self.run_fft(data)
+        self.configure_bin_parameters()
+        self.configured = True
 
     def run_fft(self, data):
 
@@ -102,6 +111,10 @@ class Fft():
         return ffty, fftfreq
 
 
+    # def sum_bin_power(self):
+
+
+
 
     def get_total_power(self, data):
         if isinstance(data, np.ndarray):
@@ -115,27 +128,35 @@ class Fft():
     
 
 
-    # def set_fft_frequencies(self):
+    ##
+    # @brief Works out bin start and end f, and number of cells it overs.
+    # 
+    # Itterates through the stats['freq_bins'], determins start and stop frequency,
+    # then associated array cells and range between them.   
+    def configure_bin_parameters(self):
 
+        for i in xrange(len(self.stats['freq_bins'])):
+            freq = self.stats['freq_bins'][i]
 
+            start_f = int(freq / self.stats['bandwidth_factor'])
+            end_f = int(freq * self.stats['bandwidth_factor'])
 
-    '''
-    Splits fft data in to regions for approximate instrument detection 
-    '''
-    def splitLevels(self, data):
+            self.stats['freq_bin_indexes'][i][0] = self.get_closest_freq_index(start_f, self.stats['frequencies'], bias='left')
+            self.stats['freq_bin_indexes'][i][1] = self.get_closest_freq_index(end_f, self.stats['frequencies'], bias='right')
+
+            self.stats['freq_bin_range'][i] = self.stats['freq_bin_indexes'][i][1] - self.stats['freq_bin_indexes'][i][0]
+
+    ##
+    # @brief Splits fft data in to regions for approximate instrument detection.    
+    def splitLevels(self):
 
         output = []
 
-        for bin in self.stats['freq_bins']:
-            start_f = int(bin / self.stats['bandwidth_factor'])
-            end_f = int(bin * self.stats['bandwidth_factor'])
+        for i in xrange(len(self.stats['freq_bins'])):
 
-            start_index = self.get_closest_freq_index(start_f, self.freqs, bias='left')
-            end_index = self.get_closest_freq_index(end_f, self.freqs, bias='right')
-
-            level = data[start_index:end_index].sum() / (end_index-start_index)
-            # print self.freqs
-            # print 'indexes:', bin, start_f, end_f, start_index, end_index, level
+            start_index = self.stats['freq_bin_indexes'][i][0]
+            end_index = self.stats['freq_bin_indexes'][i][1]
+            level = self.stats['fft_out'][start_index:end_index].sum() / (self.stats['freq_bin_range'][i])
 
             output.append(level)
 
@@ -150,10 +171,14 @@ class Fft():
        
     def normalize_bin_values(self):
         for i in xrange(len(self.stats['bin_values'])):
-            self.stats['bin_values_normalized'][i] = translate(
-                        self.stats['bin_values'][i], 
-                        0.0, self.stats['freq_bins_max'][i], 
-                        0.0, 1.0)        
+            self.stats['bin_values_normalized'][i] = self.stats['bin_values'][i] * self.stats['gain_factor']
+
+
+
+            # self.stats['bin_values_normalized'][i] = translate(
+            #             self.stats['bin_values'][i], 
+            #             0.0, self.stats['freq_bins_max'][i], 
+            #             0.0, 1.0)        
 
     ##
     # @brief Search a sorted list of frequencies to find closest index for target
