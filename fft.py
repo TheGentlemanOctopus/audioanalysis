@@ -45,7 +45,7 @@ class Fft():
             'bin_values' : [0, 0, 0, 0, 0, 0, 0],
             'bin_values_normalized' : [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             'dominant_freq' : 0.0,
-            'gain_factor' : 10e-7
+            'gain_factor' : 10e-6
     }
 
     configured = False
