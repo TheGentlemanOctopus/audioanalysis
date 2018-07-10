@@ -20,11 +20,11 @@ class BeatDetect():
         self.decrement_history()
 
         ave = sum(window[:-1])/(len(window)-1)
-        dif = time.time()-beat_detect.lastbeat
+        dif = time.time()-self.lastbeat
 
         if ((window[-1] - ave) > self.threshold) and ((time.time()-self.lastbeat) > self.wait):
             self.lastbeat = time.time()
-            print 'beat', dif
+            # print 'beat', dif
             self.history.append(history_length-1)
             return True
         else:
@@ -40,23 +40,11 @@ class BeatDetect():
 
 if __name__ == '__main__':
     
-    # vector = [ 0, 6, 25, 20, 15, 8, 15, 6, 0, 6, 0, -5, -15, -3, 4, 10, 8, 13, 8, 10, 3, 1, 20, 7, 3, 0 ]
-    # print('Detect peaks with minimum height and distance filters.')
-    # indexes = indexes(np.array(vector), thres=7.0/max(vector), min_dist=2)
-    # print('Peaks are: %s' % (indexes))
-
 
     history_length = 30
-    chan = 1
+    bin_history = [[] for x in xrange(7)]    
+    beat_detectors = [BeatDetect(wait=0.3, threshold=2, history=history_length) for x in xrange(7)]
 
-    bin_history = [[] for x in xrange(7)]
-
-    beat_history = []
-    
-
-    bd = BeatDetect(wait=0.3, threshold=2, history=history_length)
-
-    # grab audio until history builds
     datasize = 2048
     frate = 44100
 
@@ -98,11 +86,14 @@ if __name__ == '__main__':
 
     animated_plots = []
 
+    labels = ['63 Hz', '160 Hz', '400 Hz', '1 KHz', '2.5 KHz', '6.25 KHz', '16 Khz']
+
     for x in xrange(7):
-        animated_plots.append(plt.plot(xAxis,bin_history[x], '-', marker='o', markersize=12, markevery=[])[0])
+        animated_plots.append(plt.plot(xAxis,bin_history[x], '-', label=labels[x], marker='o', markersize=12, markevery=[])[0])
 
+    plt.legend(loc='upper left')
 
-    beat_detect.lastbeat = time.time()
+    # beat_detect.lastbeat = time.time()
 
     while True:
         data = audio.sample_and_send()
@@ -115,22 +106,16 @@ if __name__ == '__main__':
         for x in xrange(7):
             bin_history[x].pop(0)
             bin_history[x].append(fft.stats['bin_values_normalized'][x])
+            beat_detectors[x].detect((bin_history[x][:]))
 
-
-        bd.detect(bin_history[chan][:])
         
         for x in xrange(7):
             animated_plots[x].set_ydata(bin_history[x])
 
-            if x == chan:
-                animated_plots[x].set_markevery(bd.history)
-                
-        
+            animated_plots[x].set_markevery(beat_detectors[x].history)
+                        
         plt.draw()
         plt.pause(0.00001)
-
-
-
 
     exit()
 
