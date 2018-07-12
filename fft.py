@@ -45,21 +45,30 @@ class Fft():
             'bin_values' : [0, 0, 0, 0, 0, 0, 0],
             'bin_values_normalized' : [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             'dominant_freq' : 0.0,
-            'gain_factor' : 10e-6
+            'gain_factor' : 10e-6,
+            'saturation' : 1024
     }
 
     configured = False
 
 
-    def __init__(self, datasize=2048, frate=44100.0):
+    def __init__(
+                self, 
+                datasize=2048, 
+                frate=44100.0,
+                gain=10e-6,
+                saturation_point=1024
+                ):
 
         print "setup args"
         self.datasize=datasize
         self.frate=frate
         self.frange = int(frate/datasize)
 
-        cellFRange = self.frate / self.datasize
+        # cellFRange = self.frate / self.datasize
 
+        self.stats['gain_factor'] = gain
+        self.stats['saturation'] = saturation_point
 
     def configure_fft(self, data):
         self.run_fft(data)
@@ -170,15 +179,17 @@ class Fft():
             # print self.stats['freq_bins_max'][i] 
        
     def normalize_bin_values(self):
+        ''' multiplies raw fft values by gain, and clamps between 0 & saturation point'''
         for i in xrange(len(self.stats['bin_values'])):
-            self.stats['bin_values_normalized'][i] = self.stats['bin_values'][i] * self.stats['gain_factor']
+            # self.stats['bin_values_normalized'][i] = self.clamp(
+            #             self.stats['bin_values'][i] * self.stats['gain_factor'],
+            #             0,
+            #             self.stats['saturation'])
+            self.stats['bin_values_normalized'][i] = self.clamp(
+                        int(self.stats['bin_values'][i] * self.stats['gain_factor']),
+                        0,
+                        self.stats['saturation'])
 
-
-
-            # self.stats['bin_values_normalized'][i] = translate(
-            #             self.stats['bin_values'][i], 
-            #             0.0, self.stats['freq_bins_max'][i], 
-            #             0.0, 1.0)        
 
     ##
     # @brief Search a sorted list of frequencies to find closest index for target
@@ -220,6 +231,8 @@ class Fft():
         else:
             return 0.0
 
+    def clamp(self, n, minn, maxn):
+        return max(min(maxn,n),minn)
 
 
 
