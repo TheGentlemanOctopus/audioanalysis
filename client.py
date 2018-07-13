@@ -1,5 +1,6 @@
 import numpy as np
 import time
+from multiprocessing import Process, Queue
 
 # import matplotlib.pyplot as plt
 
@@ -50,6 +51,10 @@ class UdpClient():
                 return False
         return True
 
+    def disconnect(self):
+        self.sock.shutdown()
+        self.sock.close()
+
     def __listen_for_start(self):
 
         data, server = self.sock.recvfrom(1024)
@@ -72,87 +77,182 @@ class UdpClient():
         result = self.sock.sendto(msg, (self.ip, self.port_s))
         if result < len(msg):
             print 'not all bytes sent'
-            self.connected = True
+            self.connected = False
             return False
         else:
             return True
 
+
+class FftClient(Process):
+
+    def __init__(self, 
+            process_period=0.02,
+            udp_ip='localhost', 
+            udp_port_rec=10000, 
+            udp_port_send=10001,
+            datasize=2048,
+            frate=44100,
+            mode='mic'):
+        Process.__init__(self)
+
+        self.process_period = process_period
+        self.udp_ip = udp_ip
+        self.udp_port_rec = udp_port_rec
+        self.udp_port_send = udp_port_send
+        self.datasize = datasize
+        self.frate = frate
+        self.mode = mode
+        pass
+
+
+    def run(self):
+
+        print 'create client'
+        client = UdpClient(udp_ip=self.udp_ip, 
+                        udp_port_rec=self.udp_port_rec, 
+                        udp_port_send=self.udp_port_send)
+        client.connect()
+
+        if client.connected:
+            print 'client connected'
+
+            ''' 1 - get source '''
+            datasize = 2048
+            frate = 44100
+
+            self.mode = 'mic'
+            if self.mode == 'wav':
+                audio = Audio(source={'input':'wav','path':'resources/DaftPunk.wav','datasize':self.datasize},
+                        output=True)
+            if self.mode == 'mic':
+                audio = Audio(source={'input':'mic','datasize':self.datasize, 'rate':self.frate},
+                        output=False)
+
+            ''' create fft '''
+            fft = Fft(datasize=datasize,frate=frate, gain=10e-4, saturation_point=1024)
+            data = audio.sample_and_send()
+            fft.configure_fft(data)
+            fft.getDominantF()
+            fft.splitLevels()     
+            fft.normalize_bin_values()
+
+            last_tick = time.time()
+
+            while True:
+
+                ''' wait until next cycle '''
+                if (time.time() - last_tick) > self.process_period:
+                    last_tick = time.time()
+
+                    data = audio.sample_and_send()
+                    fft.run_fft(data)
+                    fft.getDominantF()
+                    fft.splitLevels()     
+                    # fft.set_freq_bins_max()
+                    fft.normalize_bin_values()
+
+                    msg = ','.join([str(i) for i in fft.stats['bin_values_normalized']])
+                    print msg
+                    client.send(msg)
+                else:
+                    time.sleep(.0001)
+
+        else:
+            print 'client not connected'
+
+        client.disconnect()
+
 if __name__ == '__main__':
-    
-    '''
-        CLIENT
-    1 - get from source mic / wave 
-    2 - apply fft
-    3 - send out udp
 
-        SERVER
-    - normalise & gain [in: gain value]
-    - beat detect [in: parameters]
-    - send on queue
-    '''
+    c = FftClient(process_period=0.02,
+            udp_ip='localhost', 
+            udp_port_rec=10000, 
+            udp_port_send=10001,
+            datasize=2048,
+            frate=44100,
+            mode='mic')
 
-    '''
-    It looks that form the msgeq7 datasheet https://www.sparkfun.com/datasheets/Components/General/MSGEQ7.pdf
-    the fastest you can sample the chip is around 0.000600 seconds / 1.6KHz.
-    There will be a relationship between the beat detection window and sample
-    frequency that should be considered.
-    '''
-    process_period = 1.0/50.0
+    c.daemon = True
+    c.start()
 
+    while True:
+        time.sleep(1)
+        pass
 
-    print 'create client'
-    client = UdpClient(udp_ip='localhost', udp_port_rec=10000, udp_port_send=10001)
+    # '''
+    #     CLIENT
+    # 1 - get from source mic / wave 
+    # 2 - apply fft
+    # 3 - send out udp
 
+    #     SERVER
+    # - normalise & gain [in: gain value]
+    # - beat detect [in: parameters]
+    # - send on queue
+    # '''
 
-    client.connect()
-
-    if client.connected:
-        print 'client connected'
-
-        ''' 1 - get source '''
-        datasize = 2048
-        frate = 44100
-
-        mode = 'mic'
-        if mode == 'wav':
-            audio = Audio(source={'input':'wav','path':'resources/DaftPunk.wav','datasize':datasize},
-                    output=True)
-        if mode == 'mic':
-            audio = Audio(source={'input':'mic','datasize':datasize, 'rate':frate},
-                    output=False)
-
-        ''' create fft '''
-        fft = Fft(datasize=datasize,frate=frate, gain=10e-4, saturation_point=1024)
-        data = audio.sample_and_send()
-        fft.configure_fft(data)
-        fft.getDominantF()
-        fft.splitLevels()     
-        fft.normalize_bin_values()
-
-        last_tick = time.time()
+    # '''
+    # It looks that form the msgeq7 datasheet https://www.sparkfun.com/datasheets/Components/General/MSGEQ7.pdf
+    # the fastest you can sample the chip is around 0.000600 seconds / 1.6KHz.
+    # There will be a relationship between the beat detection window and sample
+    # frequency that should be considered.
+    # '''
+    # process_period = 1.0/50.0
 
 
-        while True:
+    # print 'create client'
+    # client = UdpClient(udp_ip='localhost', udp_port_rec=10000, udp_port_send=10001)
 
-            ''' wait until next cycle '''
-            if (time.time() - last_tick) > process_period:
-                last_tick = time.time()
 
-                data = audio.sample_and_send()
-                fft.run_fft(data)
-                fft.getDominantF()
-                fft.splitLevels()     
-                # fft.set_freq_bins_max()
-                fft.normalize_bin_values()
+    # client.connect()
 
-                msg = ','.join([str(i) for i in fft.stats['bin_values_normalized']])
-                print msg
-                client.send(msg)
-            else:
-                time.sleep(.0001)
+    # if client.connected:
+    #     print 'client connected'
 
-    else:
-        print 'client not connected'
+    #     ''' 1 - get source '''
+    #     datasize = 2048
+    #     frate = 44100
 
-    exit()
+    #     mode = 'mic'
+    #     if mode == 'wav':
+    #         audio = Audio(source={'input':'wav','path':'resources/DaftPunk.wav','datasize':datasize},
+    #                 output=True)
+    #     if mode == 'mic':
+    #         audio = Audio(source={'input':'mic','datasize':datasize, 'rate':frate},
+    #                 output=False)
+
+    #     ''' create fft '''
+    #     fft = Fft(datasize=datasize,frate=frate, gain=10e-4, saturation_point=1024)
+    #     data = audio.sample_and_send()
+    #     fft.configure_fft(data)
+    #     fft.getDominantF()
+    #     fft.splitLevels()     
+    #     fft.normalize_bin_values()
+
+    #     last_tick = time.time()
+
+
+    #     while True:
+
+    #         ''' wait until next cycle '''
+    #         if (time.time() - last_tick) > process_period:
+    #             last_tick = time.time()
+
+    #             data = audio.sample_and_send()
+    #             fft.run_fft(data)
+    #             fft.getDominantF()
+    #             fft.splitLevels()     
+    #             # fft.set_freq_bins_max()
+    #             fft.normalize_bin_values()
+
+    #             msg = ','.join([str(i) for i in fft.stats['bin_values_normalized']])
+    #             print msg
+    #             client.send(msg)
+    #         else:
+    #             time.sleep(.0001)
+
+    # else:
+    #     print 'client not connected'
+
+    # exit()
 
