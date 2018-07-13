@@ -91,6 +91,15 @@ if __name__ == '__main__':
     - send on queue
     '''
 
+    '''
+    It looks that form the msgeq7 datasheet https://www.sparkfun.com/datasheets/Components/General/MSGEQ7.pdf
+    the fastest you can sample the chip is around 0.000600 seconds / 1.6KHz.
+    There will be a relationship between the beat detection window and sample
+    frequency that should be considered.
+    '''
+    process_period = 1.0/50.0
+
+
     print 'create client'
     client = UdpClient(udp_ip='localhost', udp_port_rec=10000, udp_port_send=10001)
 
@@ -98,7 +107,6 @@ if __name__ == '__main__':
     client.connect()
 
     if client.connected:
-
         print 'client connected'
 
         ''' 1 - get source '''
@@ -121,17 +129,27 @@ if __name__ == '__main__':
         fft.splitLevels()     
         fft.normalize_bin_values()
 
-        while True:
-            data = audio.sample_and_send()
-            fft.run_fft(data)
-            fft.getDominantF()
-            fft.splitLevels()     
-            # fft.set_freq_bins_max()
-            fft.normalize_bin_values()
+        last_tick = time.time()
 
-            msg = ','.join([str(i) for i in fft.stats['bin_values_normalized']])
-            print msg
-            client.send(msg)
+
+        while True:
+
+            ''' wait until next cycle '''
+            if (time.time() - last_tick) > process_period:
+                last_tick = time.time()
+
+                data = audio.sample_and_send()
+                fft.run_fft(data)
+                fft.getDominantF()
+                fft.splitLevels()     
+                # fft.set_freq_bins_max()
+                fft.normalize_bin_values()
+
+                msg = ','.join([str(i) for i in fft.stats['bin_values_normalized']])
+                print msg
+                client.send(msg)
+            else:
+                time.sleep(.0001)
 
     else:
         print 'client not connected'
